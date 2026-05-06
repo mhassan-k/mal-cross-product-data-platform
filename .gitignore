@@ -4,7 +4,7 @@ __pycache__/
 .pytest_cache/
 *.duckdb
 *.duckdb.wal
-data/output/
+data/output/*
 !data/output/payment_events.parquet
 .dlt/
 *.egg-info/
