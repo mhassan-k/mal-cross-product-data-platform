@@ -1,0 +1,8 @@
+dlt[duckdb]>=1.0
+apache-airflow>=2.8
+pydantic>=2.0
+pandas>=2.0
+pyarrow>=14.0
+duckdb>=0.10
+streamlit>=1.30
+pytest>=8.0

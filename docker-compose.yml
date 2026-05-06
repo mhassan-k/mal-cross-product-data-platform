@@ -1,0 +1,41 @@
+x-airflow-common: &airflow-common
+  build: .
+  environment:
+    AIRFLOW__CORE__EXECUTOR: SequentialExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: sqlite:////opt/airflow/shared/airflow.db
+    AIRFLOW__CORE__FERNET_KEY: ''
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'false'
+    AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
+    PYTHONPATH: /opt/airflow
+    DUCKDB_PATH: /opt/airflow/shared/mal_payments.duckdb
+    OUTPUT_DIR: /opt/airflow/data/output
+    DATA_DIR: /opt/airflow/data/raw
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./src:/opt/airflow/src
+    - ./data:/opt/airflow/data
+    - ./sql:/opt/airflow/sql
+    - ./tests:/opt/airflow/tests
+    - shared_data:/opt/airflow/shared
+  entrypoint: /opt/airflow/entrypoint.sh
+
+services:
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - "8080:8080"
+    depends_on:
+      airflow-scheduler:
+        condition: service_started
+    restart: unless-stopped
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    restart: unless-stopped
+
+
+volumes:
+  shared_data:
