@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -22,7 +22,7 @@ class PaymentEventV1(BaseModel):
     event_timestamp: datetime
     status: Literal["completed", "failed", "pending"]
     payment_type: Literal["card_transaction", "transfer", "bill_payment"]
-    payment_method: Optional[str] = None
+    payment_method: str | None = None
     schema_version: int = 1
 
 
@@ -33,14 +33,14 @@ class PaymentEventV2(BaseModel):
     source_system: Literal["cards", "transfers", "bill_payments"]
     source_event_id: str
     customer_id: str
-    counterparty_id: Optional[str] = None
-    counterparty_name: Optional[str] = None
+    counterparty_id: str | None = None
+    counterparty_name: str | None = None
     amount: Decimal
     currency: str
     event_timestamp: datetime
     status: Literal["completed", "failed", "pending"]
     payment_type: Literal["card_transaction", "transfer", "bill_payment"]
-    payment_method: Optional[str] = None
+    payment_method: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     schema_version: int = 2
 

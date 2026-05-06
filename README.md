@@ -10,12 +10,11 @@ A production-grade data pipeline that unifies **10,000 payment events** from thr
 
 | Technology | Role | Why |
 |------------|------|-----|
-| [**Python 3.10+**](https://python.org) | Core language | Industry standard for data engineering |
-| [**dlt (data load tool)**](https://dlthub.com/docs) | Ingestion & loading | Schema inference, evolution tracking, and DuckDB/BigQuery loading with minimal code |
+| [**dlt**](https://dlthub.com/docs) | Ingestion & loading | Schema inference, evolution tracking, and DuckDB/BigQuery loading with minimal code |
 | [**Apache Airflow**](https://airflow.apache.org/docs/) | Orchestration | Industry-standard DAG-based scheduler; TaskFlow API keeps pipelines Pythonic |
 | [**Pydantic v2**](https://docs.pydantic.dev/latest/) | Schema validation | Type-safe data contracts with field validators and JSON Schema export |
 | [**DuckDB**](https://duckdb.org/docs/) | Analytical warehouse | Zero-infrastructure OLAP — same SQL patterns work on Snowflake/BigQuery |
-| [**Apache Parquet**](https://parquet.apache.org/) | Columnar storage | Portable, compressed, and queryable by any analytics tool |
+| [**Parquet**](https://parquet.apache.org/) | Columnar storage | Portable, compressed, and queryable by any analytics tool |
 | [**Streamlit**](https://docs.streamlit.io/) | Interactive dashboard | Live-filterable UI deployed on Streamlit Cloud for stakeholder demos |
 | [**Docker**](https://docs.docker.com/) | Containerization | One-command reproducible environment for reviewers |
 
@@ -24,66 +23,11 @@ A production-grade data pipeline that unifies **10,000 payment events** from thr
 ## Architecture
 
 ```mermaid
-flowchart TB
-    subgraph Sources["Product Squads (CSV Sources)"]
-        C["Cards Squad\n3,334 events\nISO 8601 timestamps"]
-        T["Transfers Squad\n3,333 events\nUnix epoch ms"]
-        B["Bill Payments Squad\n3,333 events\nDD/MM/YYYY format"]
-    end
-
-    subgraph Pipeline["Airflow DAG — mal_payment_pipeline"]
-        E["extract_squad_payments\nRead CSVs + transform\nvia per-squad adapters"]
-        V["validate_canonical_schema\nPydantic V2 validation\n+ dead letter routing"]
-        L["load_to_duckdb_and_parquet\ndlt loads to DuckDB\n+ exports Parquet"]
-        A["run_analytics_queries\n5 SQL queries\n+ analytics report"]
-    end
-
-    subgraph Output["Output Layer"]
-        DB[("DuckDB\nWarehouse")]
-        PQ["Parquet\nFile"]
-        ER["errors.json\nDead Letter Queue"]
-        AR["analytics_report.json"]
-    end
-
-    ST["Streamlit Cloud\nInteractive Dashboard"]
-
-    C --> E
-    T --> E
-    B --> E
-    E --> V
-    V -->|valid| L
-    V -->|invalid| ER
-    L --> DB
-    L --> PQ
-    L --> A
-    A --> AR
-    PQ --> ST
-```
-
-### Data Flow Detail
-
-```mermaid
 flowchart LR
-    subgraph Transform["Per-Squad Adapters (sources.py)"]
-        TC["_transform_card()\nISO timestamps\napproved→completed"]
-        TT["_transform_transfer()\nepoch ms→UTC\nCOMPLETED→completed"]
-        TB["_transform_bill()\nDD/MM/YYYY→UTC\nsuccess→completed"]
-    end
-
-    subgraph Canonical["Canonical Schema (schema.py)"]
-        V2["PaymentEventV2\n• event_id, customer_id\n• counterparty_id/name\n• amount, currency\n• status, payment_type\n• metadata dict\n• schema_version: 2"]
-    end
-
-    subgraph Contract["Contracts (contracts.py)"]
-        MIG["migrate_v1_to_v2()\nBackward compat"]
-        REG["SCHEMA_REGISTRY\n{1: V1, 2: V2}"]
-    end
-
-    TC --> V2
-    TT --> V2
-    TB --> V2
-    V2 --> MIG
-    MIG --> REG
+    Cards & Transfers & Bills --> Extract --> Validate --> Load --> Analytics
+    Validate -->|errors| DLQ["Dead Letter Queue"]
+    Load --> DuckDB & Parquet
+    Parquet --> Streamlit
 ```
 
 ---
@@ -117,8 +61,6 @@ mal-cross-product-data-platform/
 │   └── queries.sql                   # 5 downstream analytical queries
 ├── tests/
 │   └── test_pipeline.py              # 11 unit tests
-└── docs/
-    └── architecture-migration-strategy.md  # Part 2 document
 ```
 
 ---
@@ -141,10 +83,7 @@ open http://localhost:8080        # Login: admin / admin
 # 4. Trigger the pipeline from CLI (alternative)
 docker compose exec airflow-webserver airflow dags trigger mal_payment_pipeline
 
-# 5. Run tests inside the container
-docker compose exec airflow-webserver python -m pytest tests/ -v
-
-# 6. Stop everything
+# 5. Stop everything
 docker compose down -v
 ```
 
@@ -152,29 +91,8 @@ docker compose down -v
 
 ![Airflow DAG Success](docs/airflow-dag-success.png)
 
-### Option 2: Local Python
 
-```bash
-# 1. Clone & install
-git clone https://github.com/mhassan-k/mal-cross-product-data-platform.git
-cd mal-cross-product-data-platform
-pip install -r requirements.txt
-
-# 2. Run the pipeline (standalone, no Airflow needed)
-python -m src.pipeline
-
-# 3. View the Streamlit dashboard
-streamlit run app.py
-# Opens at http://localhost:8501
-
-# 4. Run SQL queries directly
-duckdb mal_payments.duckdb < sql/queries.sql
-
-# 5. Run tests
-pytest tests/ -v
-```
-
-### Option 3: Streamlit Cloud (View Only)
+### Option 2: Streamlit Cloud (View Only)
 
 No setup needed — just open the live dashboard:
 
@@ -248,23 +166,6 @@ Five downstream analytical queries are included in `sql/queries.sql`:
 | 5 | Cross-product customers | Customer 360 / multi-product engagement |
 
 ---
-
-## Key Design Decisions
-
-| Decision | Rationale |
-|----------|-----------|
-| [**dlt**](https://dlthub.com/docs) for ingestion | Schema inference, evolution tracking, and destination-agnostic loading (swap DuckDB → BigQuery in one line) |
-| [**Airflow TaskFlow API**](https://airflow.apache.org/docs/apache-airflow/stable/tutorial/taskflow.html) | `@task` decorators keep DAGs Pythonic; industry-standard orchestrator |
-| **Dual run mode** | Airflow DAG for production; standalone `python -m src.pipeline` for dev/CI |
-| **Docker Compose** | One `docker compose up` to start everything; zero local setup for reviewers |
-| [**Pydantic v2**](https://docs.pydantic.dev/latest/) validation | Type safety, clear errors, JSON Schema export for data contracts |
-| [**DuckDB**](https://duckdb.org) + Parquet | Zero-infrastructure analytics; same SQL patterns work on Snowflake/BigQuery |
-| **Counterparty abstraction** | Unifies merchant / receiver / biller into one model — no type-specific schema explosion |
-| **Dead-letter pattern** | Invalid records captured in `errors.json`; pipeline never blocks on bad data |
-| **10K realistic events** | 200 customers, 5 currencies, realistic KSA merchants/billers/transfer patterns |
-
----
-
 ## Production Architecture
 
 | Local (This Repo) | Production at Mal |
